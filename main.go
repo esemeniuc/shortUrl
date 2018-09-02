@@ -58,17 +58,7 @@ func sqlInit() error {
 
 func homePageHandler(w http.ResponseWriter, r *http.Request) {
 	if (r.URL.Path == "/") {
-		response := `
-        <h1>shortURL</h1>
-        <p class="lead">Shorten your urls here!</p>
-<form action="/submit" method="post">
-  <div class="form-group">
-    <input type="url" class="form-control" name="urlField" placeholder="Enter url">
-  </div>
-  <input type="submit" class="btn btn-primary" value="Submit" />
-</form>
-`
-		fmt.Fprintf(w, pageHeader()+response+pageFooter())
+		fmt.Fprintf(w, pageHeader()+homepageContent()+pageFooter())
 		return
 	}
 
