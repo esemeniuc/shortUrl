@@ -18,7 +18,6 @@ var urlLookupQuery *sql.Stmt
 func init() {
 	httpInit()
 	err := sqlInit()
-	fmt.Printf("initing, db==nil:%v\n", db == nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -27,7 +26,6 @@ func init() {
 func httpInit() {
 	http.HandleFunc("/", homePageHandler)
 	http.HandleFunc("/submit", postHandler)
-
 }
 
 func shutdown() {
@@ -59,6 +57,8 @@ func sqlInit() error {
 }
 
 func homePageHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, pageHeader())
+	defer fmt.Fprintf(w, pageFooter())
 	if (r.URL.Path == "/") {
 		response := `
         <h1>shortURL</h1>
@@ -70,7 +70,7 @@ func homePageHandler(w http.ResponseWriter, r *http.Request) {
   <input type="submit" class="btn btn-primary" value="Submit" />
 </form>
 `
-		fmt.Fprintf(w, pageHeader()+response+pageFooter())
+		fmt.Fprintf(w, response)
 		return
 	}
 
@@ -84,7 +84,7 @@ func homePageHandler(w http.ResponseWriter, r *http.Request) {
 		<div>Sorry we encountered an error</div>
         <p>` + err.Error() + "</p>"
 
-		fmt.Fprintf(w, pageHeader()+response+pageFooter())
+		fmt.Fprintf(w, response)
 		return
 	}
 
