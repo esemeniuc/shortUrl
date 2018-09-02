@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha1"
 	"database/sql"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
@@ -12,26 +13,31 @@ var SQLITE_FILE_NAME = "./shortenedURLs.db"
 var SQLITE_DSN = "file:" + SQLITE_FILE_NAME + "?mode=rwc"
 var HTTP_PORT = ":8080"
 var db *sql.DB
+var urlLookupQuery *sql.Stmt
 
-func init(){
+func init() {
 	httpInit()
-	err:= sqlInit()
+	err := sqlInit()
+	fmt.Printf("initing, db==nil:%v\n", db == nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func httpInit(){
+func httpInit() {
 	http.HandleFunc("/", homePageHandler)
-	http.HandleFunc("/help", helpPageHandler)
+	http.HandleFunc("/submit", postHandler)
+
 }
 
-func shutdown(){
+func shutdown() {
+	urlLookupQuery.Close()
 	db.Close()
 }
 
 func sqlInit() error {
-	db, err := sql.Open("sqlite3", SQLITE_DSN)
+	var err error
+	db, err = sql.Open("sqlite3", SQLITE_DSN)
 	if err != nil {
 		return err
 	}
@@ -39,114 +45,94 @@ func sqlInit() error {
 	sqlStmt := `
 	 CREATE TABLE IF NOT EXISTS urls
   (
-     id        INTEGER NOT NULL PRIMARY KEY,
-     url       TEXT NOT NULL,
-     shortcode TEXT NOT NULL UNIQUE
+     shortcode TEXT NOT NULL PRIMARY KEY,
+     url       TEXT NOT NULL
   );`
 	_, err = db.Exec(sqlStmt)
+
+	urlLookupQuery, err = db.Prepare("SELECT url FROM urls WHERE shortcode = ?")
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
 func homePageHandler(w http.ResponseWriter, r *http.Request) {
-	response := `
+	if (r.URL.Path == "/") {
+		response := `
         <h1>shortURL</h1>
         <p class="lead">Shorten your urls here!</p>
-<form>
+<form action="/submit" method="post">
   <div class="form-group">
-    <input type="url" class="form-control" id="urlField" placeholder="Enter url">
+    <input type="url" class="form-control" name="urlField" placeholder="Enter url">
   </div>
-  <button type="submit" class="btn btn-primary">Submit</button>
+  <input type="submit" class="btn btn-primary" value="Submit" />
 </form>
 `
-	fmt.Fprintf(w,
-		pageHeader() + response + pageFooter())
-		//r.URL.Path[1:])
+		fmt.Fprintf(w, pageHeader()+response+pageFooter())
+		return
+	}
+
+	//lookup
+	inputShortcode := r.URL.Path[1:]
+	var targetUrl string
+	var err = urlLookupQuery.QueryRow(inputShortcode).Scan(&targetUrl)
+	if err != nil {
+		response := `
+        <h1>shortURL</h1>
+		<div>Sorry we encountered an error</div>
+        <p>` + err.Error() + "</p>"
+
+		fmt.Fprintf(w, pageHeader()+response+pageFooter())
+		return
+	}
+
+	//redirect
+	http.Redirect(w, r, targetUrl, 301)
+	log.Printf("Redirecting user with shortcode %s to %s", inputShortcode, targetUrl)
 }
 
-func helpPageHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Need help?")
+func stringToSHA1(input string) string {
+	return fmt.Sprintf("%x", sha1.Sum([]byte(input)))
 }
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, pageHeader())
+	defer fmt.Fprintf(w, pageFooter())
+
 	tx, err := db.Begin()
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		fmt.Fprintf(w, "Transaction begin err: %v", err)
+		return
 	}
-	stmt, err := tx.Prepare("insert into foo(id, name) values(?, ?)")
+	stmt, err := tx.Prepare("insert into urls(shortcode, url) values(?, ?)")
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		fmt.Fprintf(w, "Transaction begin err: %v", err)
+		return
 	}
 	defer stmt.Close()
-	for i := 0; i < 100; i++ {
-		_, err = stmt.Exec(i, fmt.Sprintf("こんにちわ世界%03d", i))
-		if err != nil {
-			log.Fatal(err)
-		}
+
+	if err := r.ParseForm(); err != nil {
+		log.Print(err)
+		fmt.Fprintf(w, "ParseForm() err: %v", err)
+		return
+	}
+	inputUrl := r.FormValue("urlField")
+	shortcode := stringToSHA1(inputUrl)[:8] //only care about first 8 chars
+	_, err = stmt.Exec(shortcode, inputUrl)
+	if err != nil {
+		log.Print(err)
+		fmt.Fprintf(w, "DB Insert err: %v", err)
+		return
 	}
 	tx.Commit()
 
-	rows, err := db.Query("select id, name from foo")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id int
-		var name string
-		err = rows.Scan(&id, &name)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(id, name)
-	}
-	err = rows.Err()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	stmt, err = db.Prepare("select name from foo where id = ?")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer stmt.Close()
-	var name string
-	err = stmt.QueryRow("3").Scan(&name)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(name)
-
-	_, err = db.Exec("delete from foo")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	_, err = db.Exec("insert into foo(id, name) values(1, 'foo'), (2, 'bar'), (3, 'baz')")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	rows, err = db.Query("select id, name from foo")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id int
-		var name string
-		err = rows.Scan(&id, &name)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println(id, name)
-	}
-	err = rows.Err()
-	if err != nil {
-		log.Fatal(err)
-	}
+	log.Printf("Saved url '%s' as shortcode '%s'", inputUrl, shortcode)
+	completeUrl :=r.Host+"/"+shortcode
+	fmt.Fprintf(w, "Your new shortened url to %s is <a href=\"%s\">%s</a>", inputUrl, completeUrl,completeUrl)
 }
 
 func main() {
