@@ -57,8 +57,6 @@ func sqlInit() error {
 }
 
 func homePageHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, pageHeader())
-	defer fmt.Fprintf(w, pageFooter())
 	if (r.URL.Path == "/") {
 		response := `
         <h1>shortURL</h1>
@@ -70,7 +68,7 @@ func homePageHandler(w http.ResponseWriter, r *http.Request) {
   <input type="submit" class="btn btn-primary" value="Submit" />
 </form>
 `
-		fmt.Fprintf(w, response)
+		fmt.Fprintf(w, pageHeader()+response+pageFooter())
 		return
 	}
 
@@ -84,7 +82,7 @@ func homePageHandler(w http.ResponseWriter, r *http.Request) {
 		<div>Sorry we encountered an error</div>
         <p>` + err.Error() + "</p>"
 
-		fmt.Fprintf(w, response)
+		fmt.Fprintf(w, pageHeader()+response+pageFooter())
 		return
 	}
 
@@ -104,20 +102,20 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	tx, err := db.Begin()
 	if err != nil {
 		log.Print(err)
-		fmt.Fprintf(w, "Transaction begin err: %v", err)
+		fmt.Fprintf(w, "DB transaction begin err: %v", err)
 		return
 	}
 	stmt, err := tx.Prepare("insert into urls(shortcode, url) values(?, ?)")
 	if err != nil {
 		log.Print(err)
-		fmt.Fprintf(w, "Transaction begin err: %v", err)
+		fmt.Fprintf(w, "DB transaction prepare err: %v", err)
 		return
 	}
 	defer stmt.Close()
 
 	if err := r.ParseForm(); err != nil {
 		log.Print(err)
-		fmt.Fprintf(w, "ParseForm() err: %v", err)
+		fmt.Fprintf(w, "Request ParseForm() err: %v", err)
 		return
 	}
 	inputUrl := r.FormValue("urlField")
@@ -131,8 +129,8 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	tx.Commit()
 
 	log.Printf("Saved url '%s' as shortcode '%s'", inputUrl, shortcode)
-	completeUrl :=r.Host+"/"+shortcode
-	fmt.Fprintf(w, "Your new shortened url to %s is <a href=\"%s\">%s</a>", inputUrl, completeUrl,completeUrl)
+	completeUrl := r.Host + "/" + shortcode
+	fmt.Fprintf(w, "Your new shortened url to %s is <a href=\"%s\">%s</a>", inputUrl, completeUrl, completeUrl)
 }
 
 func main() {
